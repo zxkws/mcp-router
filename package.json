@@ -1,0 +1,32 @@
+{
+  "name": "mcp-router",
+  "version": "0.1.0",
+  "description": "An open-source MCP router that proxies multiple MCP servers behind a single MCP endpoint (stdio + Streamable HTTP).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "mcpr": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev:serve": "tsx src/cli.ts serve",
+    "dev:stdio": "tsx src/cli.ts stdio",
+    "build": "tsup",
+    "test": "npm run build && vitest run",
+    "lint": "node -c dist/cli.js || true"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.2.0",
+    "express": "^5.1.0",
+    "prom-client": "^15.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
+

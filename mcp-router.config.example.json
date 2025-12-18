@@ -1,0 +1,13 @@
+{
+  "listen": { "http": { "port": 8080, "path": "/mcp" }, "stdio": true },
+  "auth": { "tokens": [{ "value": "dev-token", "allowedMcpServers": ["demo"] }] },
+  "mcpServers": {
+    "demo": {
+      "transport": "streamable-http",
+      "url": "http://127.0.0.1:9001/mcp",
+      "enabled": true,
+      "headers": { "Authorization": "Bearer upstream-token-if-needed" }
+    }
+  }
+}
+
