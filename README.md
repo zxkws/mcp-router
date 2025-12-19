@@ -116,6 +116,14 @@ node ./dist/cli.js import --config ./mcp-router.config.json --from /path/to/clau
 node ./dist/cli.js import --config ./mcp-router.config.json --from /path/to/config.toml --format codex --conflict rename --tag imported
 ```
 
+Manage servers:
+
+```bash
+node ./dist/cli.js add --config ./mcp-router.config.json --name demo --url http://127.0.0.1:9001/mcp --tag demo
+node ./dist/cli.js list --config ./mcp-router.config.json
+node ./dist/cli.js status --config ./mcp-router.config.json
+```
+
 Paste via stdin:
 
 ```bash

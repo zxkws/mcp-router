@@ -30,6 +30,35 @@ function collectArgs(args: string[], flag: string): string[] {
   return out;
 }
 
+function parseBoolean(value: string | null): boolean | null {
+  if (!value) return null;
+  const lowered = value.toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(lowered)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(lowered)) return false;
+  return null;
+}
+
+function parseKeyValuePairs(values: string[], label: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const item of values) {
+    const idx = item.indexOf('=');
+    if (idx <= 0) {
+      // eslint-disable-next-line no-console
+      console.warn(`[mcp-router] ignored ${label}: ${item} (expected KEY=VALUE)`);
+      continue;
+    }
+    const key = item.slice(0, idx).trim();
+    const value = item.slice(idx + 1);
+    if (!key) {
+      // eslint-disable-next-line no-console
+      console.warn(`[mcp-router] ignored ${label}: ${item} (empty key)`);
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 function normalizeFormat(value: string | null): ImportFormat {
   const allowed: ImportFormat[] = ['auto', 'router', 'claude', 'codex', 'gemini', '1mcp', 'json'];
   if (!value) return 'auto';
@@ -55,6 +84,9 @@ function usage(exitCode = 0) {
       '',
       'Usage:',
       '  mcpr init   [--config ./mcp-router.config.json] [--force]',
+      '  mcpr add    --config ./mcp-router.config.json --name <name> [--transport http|streamable-http|stdio] [--url <url>] [--command <cmd>] [--arg <arg>] [--cwd <cwd>] [--env KEY=VAL] [--header KEY=VAL] [--tag tag] [--version <v>] [--timeout-ms <ms>] [--enabled true|false] [--overwrite]',
+      '  mcpr list   --config ./mcp-router.config.json [--json]',
+      '  mcpr status --config ./mcp-router.config.json [--json] [--include-stdio] [--timeout-ms <ms>]',
       '  mcpr import --config ./mcp-router.config.json --from <file|-> [--format auto|claude|codex|gemini|1mcp|router|json] [--conflict rename|skip|overwrite] [--prefix name-] [--tag tag] [--dry-run]',
       '  mcpr serve  --config ./mcp-router.config.json [--host 127.0.0.1] [--port 8080] [--path /mcp] [--no-watch]',
       '  mcpr stdio  --config ./mcp-router.config.json --token <TOKEN> [--no-watch]',
@@ -179,6 +211,185 @@ async function main() {
     await fs.writeFile(cfgPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
     // eslint-disable-next-line no-console
     console.log(`[mcp-router] updated ${cfgPath}`);
+    return;
+  }
+
+  if (cmd === 'add') {
+    const cfgPath = path.resolve(argValue(args, '--config') ?? defaultConfigPath());
+    const nameRaw = argValue(args, '--name');
+    if (!nameRaw) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] add requires --name');
+      process.exit(1);
+    }
+    const name = nameRaw.trim();
+    const transportArg = argValue(args, '--transport');
+    const url = argValue(args, '--url');
+    const command = argValue(args, '--command');
+    const cwd = argValue(args, '--cwd');
+    const argsList = collectArgs(args, '--arg');
+    const envPairs = parseKeyValuePairs(collectArgs(args, '--env'), 'env');
+    const headerPairs = parseKeyValuePairs(collectArgs(args, '--header'), 'header');
+    const tags = collectArgs(args, '--tag').filter(Boolean);
+    const version = argValue(args, '--version');
+    const timeoutMsRaw = argValue(args, '--timeout-ms');
+    const enabledRaw = argValue(args, '--enabled');
+    const disabledFlag = hasFlag(args, '--disabled');
+    const overwrite = hasFlag(args, '--overwrite');
+
+    const enabledParsed = parseBoolean(enabledRaw);
+    const enabled = enabledParsed !== null ? enabledParsed : disabledFlag ? false : undefined;
+
+    let transport: 'http' | 'streamable-http' | 'stdio' | null = null;
+    if (transportArg) {
+      const lowered = transportArg.toLowerCase();
+      if (lowered === 'http' || lowered === 'streamable-http' || lowered === 'stdio') transport = lowered;
+    }
+    if (!transport) {
+      if (url) transport = 'streamable-http';
+      else if (command) transport = 'stdio';
+    }
+
+    if (!transport) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] add requires --transport or --url/--command');
+      process.exit(1);
+    }
+
+    if ((transport === 'http' || transport === 'streamable-http') && !url) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] add requires --url for http/streamable-http');
+      process.exit(1);
+    }
+    if (transport === 'stdio' && !command) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] add requires --command for stdio');
+      process.exit(1);
+    }
+
+    const timeoutMs = timeoutMsRaw ? Number(timeoutMsRaw) : null;
+    if (timeoutMsRaw && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] invalid --timeout-ms');
+      process.exit(1);
+    }
+
+    const rawText = await fs.readFile(cfgPath, 'utf8');
+    const rawJson = JSON.parse(rawText);
+    const rawConfig = parseRouterConfig(rawJson);
+    const targetKey = rawConfig.mcpServers
+      ? 'mcpServers'
+      : rawConfig.upstreams
+        ? 'upstreams'
+        : 'mcpServers';
+    const existing = (rawConfig as any)[targetKey] ?? {};
+    if (existing[name] && !overwrite) {
+      // eslint-disable-next-line no-console
+      console.error(`[mcp-router] server "${name}" already exists (use --overwrite)`);
+      process.exit(1);
+    }
+
+    const cfg: any = { transport };
+    if (url) cfg.url = url;
+    if (command) cfg.command = command;
+    if (argsList.length > 0) cfg.args = argsList;
+    if (cwd) cfg.cwd = cwd;
+    if (Object.keys(envPairs).length > 0) cfg.env = envPairs;
+    if (Object.keys(headerPairs).length > 0) cfg.headers = headerPairs;
+    if (tags.length > 0) cfg.tags = tags;
+    if (version) cfg.version = version;
+    if (timeoutMs) cfg.timeoutMs = timeoutMs;
+    if (enabled !== undefined) cfg.enabled = enabled;
+
+    const updated: any = { ...rawConfig, [targetKey]: { ...existing, [name]: cfg } };
+    if (targetKey === 'mcpServers') delete updated.upstreams;
+    parseRouterConfig(updated);
+
+    await fs.writeFile(cfgPath, JSON.stringify(updated, null, 2) + '\n', 'utf8');
+    // eslint-disable-next-line no-console
+    console.log(`[mcp-router] added ${name} (${transport}) to ${cfgPath}`);
+    return;
+  }
+
+  if (cmd === 'list') {
+    const cfgPath = path.resolve(argValue(args, '--config') ?? defaultConfigPath());
+    const jsonOut = hasFlag(args, '--json');
+    const cfg = loadConfigFile(cfgPath);
+    const entries = Object.entries(cfg.mcpServers);
+    if (jsonOut) {
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify(entries.map(([name, s]) => ({ name, ...s })), null, 2));
+      return;
+    }
+    for (const [name, s] of entries) {
+      const target = s.transport === 'stdio' ? s.command ?? '' : s.url ?? '';
+      const tags = s.tags && s.tags.length > 0 ? ` tags=${s.tags.join(',')}` : '';
+      const version = s.version ? ` version=${s.version}` : '';
+      const enabled = s.enabled ? 'enabled' : 'disabled';
+      // eslint-disable-next-line no-console
+      console.log(`${name}\t${s.transport}\t${enabled}\t${target}${tags}${version}`);
+    }
+    return;
+  }
+
+  if (cmd === 'status') {
+    const cfgPath = path.resolve(argValue(args, '--config') ?? defaultConfigPath());
+    const jsonOut = hasFlag(args, '--json');
+    const includeStdio = hasFlag(args, '--include-stdio');
+    const timeoutMsRaw = argValue(args, '--timeout-ms');
+    const timeoutMs = timeoutMsRaw ? Number(timeoutMsRaw) : null;
+    if (timeoutMsRaw && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] invalid --timeout-ms');
+      process.exit(1);
+    }
+
+    const logger = createLogger();
+    const upstreams = new UpstreamManager({ logger });
+    const configRef = { current: loadConfigFile(cfgPath) };
+    upstreams.setConfigRef(configRef);
+
+    if (timeoutMs) {
+      for (const cfg of Object.values(configRef.current.mcpServers)) {
+        if (!cfg.timeoutMs) cfg.timeoutMs = timeoutMs;
+      }
+    }
+
+    const results: Array<{ name: string; status: string; detail?: string }> = [];
+    let hasError = false;
+    for (const [name, cfg] of Object.entries(configRef.current.mcpServers)) {
+      if (!cfg.enabled) {
+        results.push({ name, status: 'disabled' });
+        continue;
+      }
+      if (cfg.transport === 'stdio' && !includeStdio) {
+        results.push({ name, status: 'skipped-stdio' });
+        continue;
+      }
+      try {
+        const client = upstreams.getClient(name, cfg);
+        const res = await client.listTools();
+        const count = Array.isArray((res as any).tools) ? (res as any).tools.length : 0;
+        results.push({ name, status: 'ok', detail: `tools=${count}` });
+      } catch (err) {
+        hasError = true;
+        results.push({ name, status: 'error', detail: (err as Error).message });
+      }
+    }
+
+    await upstreams.closeAll();
+
+    if (jsonOut) {
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify(results, null, 2));
+    } else {
+      for (const item of results) {
+        const detail = item.detail ? `\t${item.detail}` : '';
+        // eslint-disable-next-line no-console
+        console.log(`${item.name}\t${item.status}${detail}`);
+      }
+    }
+    process.exitCode = hasError ? 1 : 0;
     return;
   }
 
