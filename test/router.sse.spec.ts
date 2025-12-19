@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { startMockUpstream } from './helpers/mockUpstream.js';
 import { startHttpServer } from '../src/httpServer.js';
 import { UpstreamManager } from '../src/upstream/manager.js';
@@ -56,10 +56,20 @@ afterAll(async () => {
   await upstream.close();
 });
 
-test('http mode: list_providers/tools.list/tools.call work with auth', async () => {
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(new URL(router.url), {
+test('deprecated sse: can call router tools via /sse + /messages', async () => {
+  const base = new URL(router.url);
+  const sseUrl = new URL('/sse', `${base.protocol}//${base.host}`);
+
+  const client = new Client({ name: 'sse-test-client', version: '1.0.0' });
+  const transport = new SSEClientTransport(sseUrl, {
     requestInit: { headers: { Authorization: 'Bearer dev-token' } },
+    eventSourceInit: {
+      fetch: async (url, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set('Authorization', 'Bearer dev-token');
+        return fetch(url, { ...init, headers });
+      },
+    },
   });
 
   await client.connect(transport);
@@ -68,16 +78,12 @@ test('http mode: list_providers/tools.list/tools.call work with auth', async () 
   const providersJson = providers.structuredContent as any;
   expect(providersJson.providers.map((p: any) => p.name)).toContain('demo');
 
-  const tools = await client.callTool({ name: 'tools.list', arguments: { provider: 'demo' } });
-  const toolsJson = tools.structuredContent as any;
-  expect(toolsJson.tools.map((t: any) => t.name)).toContain('echo');
-
   const call = await client.callTool({
     name: 'tools.call',
-    arguments: { provider: 'demo', name: 'echo', arguments: { message: 'hello' } },
+    arguments: { provider: 'demo', name: 'echo', arguments: { message: 'hello-sse' } },
   });
   const callJson = call.structuredContent as any;
-  expect(callJson.structuredContent.message).toBe('hello');
+  expect(callJson.structuredContent.message).toBe('hello-sse');
 
   await client.close();
 });

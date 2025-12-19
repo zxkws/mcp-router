@@ -4,6 +4,22 @@
   "description": "An open-source MCP router that proxies multiple MCP servers behind a single MCP endpoint (stdio + Streamable HTTP).",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "mcp-router.config.example.json",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    "RELEASING.md"
+  ],
   "bin": {
     "mcpr": "./dist/cli.js"
   },
@@ -11,13 +27,19 @@
     "dev:serve": "tsx src/cli.ts serve",
     "dev:stdio": "tsx src/cli.ts stdio",
     "build": "tsup",
+    "prepack": "npm run build",
+    "smoke:http": "node examples/smoke-http.mjs",
+    "smoke:stdio": "node examples/smoke-stdio.mjs",
     "test": "npm run build && vitest run",
     "lint": "node -c dist/cli.js || true"
   },
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.2.0",
+    "cross-spawn": "^7.0.6",
     "express": "^5.1.0",
     "prom-client": "^15.1.0",
+    "semver": "^7.7.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -29,4 +51,3 @@
     "vitest": "^3.2.4"
   }
 }
-

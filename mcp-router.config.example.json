@@ -1,13 +1,21 @@
 {
   "listen": { "http": { "port": 8080, "path": "/mcp" }, "stdio": true },
+  "admin": { "enabled": false, "path": "/admin", "allowUnauthenticated": false },
+  "toolExposure": "hierarchical",
+  "routing": {
+    "selectorStrategy": "roundRobin",
+    "healthChecks": { "enabled": true, "intervalMs": 15000, "timeoutMs": 5000, "includeStdio": false },
+    "circuitBreaker": { "enabled": true, "failureThreshold": 3, "openMs": 30000 }
+  },
   "auth": { "tokens": [{ "value": "dev-token", "allowedMcpServers": ["demo"] }] },
   "mcpServers": {
     "demo": {
       "transport": "streamable-http",
       "url": "http://127.0.0.1:9001/mcp",
       "enabled": true,
+      "tags": ["demo"],
+      "version": "1.0.0",
       "headers": { "Authorization": "Bearer upstream-token-if-needed" }
     }
   }
 }
-

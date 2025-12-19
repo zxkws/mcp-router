@@ -7,12 +7,15 @@ import { UpstreamManager } from '../src/upstream/manager.js';
 import { createLogger } from '../src/log.js';
 import type { NormalizedRouterConfig } from '../src/config.js';
 
-let upstream: Awaited<ReturnType<typeof startMockUpstream>>;
+let upstream1: Awaited<ReturnType<typeof startMockUpstream>>;
+let upstream2: Awaited<ReturnType<typeof startMockUpstream>>;
 let router: Awaited<ReturnType<typeof startHttpServer>>;
 const upstreams = new UpstreamManager();
 
 beforeAll(async () => {
-  upstream = await startMockUpstream();
+  upstream1 = await startMockUpstream();
+  upstream2 = await startMockUpstream();
+
   const config: NormalizedRouterConfig = {
     configPath: '<in-memory>',
     listen: { http: { host: '127.0.0.1', port: 0, path: '/mcp' }, stdio: true },
@@ -24,13 +27,21 @@ beforeAll(async () => {
       circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30_000 },
     },
     audit: { enabled: true, logArguments: false, maxArgumentChars: 2000 },
-    projects: {},
+    projects: {
+      p1: {
+        id: 'p1',
+        name: 'Project 1',
+        allowedMcpServers: ['demo1'],
+        allowedTags: null,
+        rateLimitRpm: null,
+      },
+    },
     sandbox: { stdio: { allowedCommands: null, allowedCwdRoots: null, allowedEnvKeys: null, inheritEnvKeys: null } },
     auth: {
       tokens: [
         {
-          value: 'dev-token',
-          projectId: null,
+          value: 'token-p1',
+          projectId: 'p1',
           allowedMcpServers: null,
           allowedTags: null,
           rateLimitRpm: null,
@@ -38,9 +49,11 @@ beforeAll(async () => {
       ],
     },
     mcpServers: {
-      demo: { transport: 'streamable-http', url: upstream.url, enabled: true },
+      demo1: { transport: 'streamable-http', url: upstream1.url, enabled: true },
+      demo2: { transport: 'streamable-http', url: upstream2.url, enabled: true },
     },
   };
+
   router = await startHttpServer({
     configRef: { current: config },
     upstreams,
@@ -53,31 +66,38 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await router.close();
-  await upstream.close();
+  await upstream1.close();
+  await upstream2.close();
 });
 
-test('http mode: list_providers/tools.list/tools.call work with auth', async () => {
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
+test('project allowlist restricts visible providers and calls', async () => {
+  const client = new Client({ name: 'projects-test-client', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL(router.url), {
-    requestInit: { headers: { Authorization: 'Bearer dev-token' } },
+    requestInit: { headers: { Authorization: 'Bearer token-p1' } },
   });
-
   await client.connect(transport);
 
   const providers = await client.callTool({ name: 'list_providers', arguments: {} });
   const providersJson = providers.structuredContent as any;
-  expect(providersJson.providers.map((p: any) => p.name)).toContain('demo');
+  expect(providersJson.providers.map((p: any) => p.name)).toEqual(['demo1']);
 
-  const tools = await client.callTool({ name: 'tools.list', arguments: { provider: 'demo' } });
-  const toolsJson = tools.structuredContent as any;
-  expect(toolsJson.tools.map((t: any) => t.name)).toContain('echo');
-
-  const call = await client.callTool({
+  const okCall = await client.callTool({
     name: 'tools.call',
-    arguments: { provider: 'demo', name: 'echo', arguments: { message: 'hello' } },
+    arguments: { provider: 'demo1', name: 'echo', arguments: { message: 'ok' } },
   });
-  const callJson = call.structuredContent as any;
-  expect(callJson.structuredContent.message).toBe('hello');
+  expect((okCall.structuredContent as any).structuredContent.message).toBe('ok');
+
+  let denied = false;
+  try {
+    await client.callTool({
+      name: 'tools.call',
+      arguments: { provider: 'demo2', name: 'echo', arguments: { message: 'nope' } },
+    });
+  } catch (err: any) {
+    denied = true;
+    expect(String(err?.message ?? err)).toMatch(/not allowed/i);
+  }
+  expect(denied).toBe(true);
 
   await client.close();
 });

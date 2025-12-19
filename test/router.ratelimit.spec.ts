@@ -33,7 +33,7 @@ beforeAll(async () => {
           projectId: null,
           allowedMcpServers: null,
           allowedTags: null,
-          rateLimitRpm: null,
+          rateLimitRpm: 1,
         },
       ],
     },
@@ -56,28 +56,23 @@ afterAll(async () => {
   await upstream.close();
 });
 
-test('http mode: list_providers/tools.list/tools.call work with auth', async () => {
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
+test('rate limit: second request is rejected', async () => {
+  const client = new Client({ name: 'ratelimit-test-client', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL(router.url), {
     requestInit: { headers: { Authorization: 'Bearer dev-token' } },
   });
-
   await client.connect(transport);
 
-  const providers = await client.callTool({ name: 'list_providers', arguments: {} });
-  const providersJson = providers.structuredContent as any;
-  expect(providersJson.providers.map((p: any) => p.name)).toContain('demo');
+  await client.callTool({ name: 'list_providers', arguments: {} });
 
-  const tools = await client.callTool({ name: 'tools.list', arguments: { provider: 'demo' } });
-  const toolsJson = tools.structuredContent as any;
-  expect(toolsJson.tools.map((t: any) => t.name)).toContain('echo');
-
-  const call = await client.callTool({
-    name: 'tools.call',
-    arguments: { provider: 'demo', name: 'echo', arguments: { message: 'hello' } },
-  });
-  const callJson = call.structuredContent as any;
-  expect(callJson.structuredContent.message).toBe('hello');
+  let threw = false;
+  try {
+    await client.callTool({ name: 'list_providers', arguments: {} });
+  } catch (err: any) {
+    threw = true;
+    expect(String(err?.message ?? err)).toMatch(/Rate limit exceeded/);
+  }
+  expect(threw).toBe(true);
 
   await client.close();
 });

@@ -7,21 +7,24 @@ import { UpstreamManager } from '../src/upstream/manager.js';
 import { createLogger } from '../src/log.js';
 import type { NormalizedRouterConfig } from '../src/config.js';
 
-let upstream: Awaited<ReturnType<typeof startMockUpstream>>;
+let upstreamA: Awaited<ReturnType<typeof startMockUpstream>>;
+let upstreamB: Awaited<ReturnType<typeof startMockUpstream>>;
 let router: Awaited<ReturnType<typeof startHttpServer>>;
 const upstreams = new UpstreamManager();
 
 beforeAll(async () => {
-  upstream = await startMockUpstream();
+  upstreamA = await startMockUpstream('A');
+  upstreamB = await startMockUpstream('B');
+
   const config: NormalizedRouterConfig = {
     configPath: '<in-memory>',
     listen: { http: { host: '127.0.0.1', port: 0, path: '/mcp' }, stdio: true },
     admin: { enabled: false, path: '/admin', allowUnauthenticated: false },
     toolExposure: 'hierarchical',
     routing: {
-      selectorStrategy: 'roundRobin',
+      selectorStrategy: 'random',
       healthChecks: { enabled: false, intervalMs: 15_000, timeoutMs: 5_000, includeStdio: false },
-      circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30_000 },
+      circuitBreaker: { enabled: false, failureThreshold: 3, openMs: 30_000 },
     },
     audit: { enabled: true, logArguments: false, maxArgumentChars: 2000 },
     projects: {},
@@ -38,9 +41,12 @@ beforeAll(async () => {
       ],
     },
     mcpServers: {
-      demo: { transport: 'streamable-http', url: upstream.url, enabled: true },
+      demoA: { transport: 'streamable-http', url: upstreamA.url, enabled: true, tags: ['demo'] },
+      demoB: { transport: 'streamable-http', url: upstreamB.url, enabled: true, tags: ['demo'] },
     },
   };
+
+  let call = 0;
   router = await startHttpServer({
     configRef: { current: config },
     upstreams,
@@ -48,36 +54,34 @@ beforeAll(async () => {
     host: '127.0.0.1',
     port: 0,
     path: '/mcp',
+    random: () => (call++ === 0 ? 0.01 : 0.99),
   });
 });
 
 afterAll(async () => {
   await router.close();
-  await upstream.close();
+  await upstreamA.close();
+  await upstreamB.close();
 });
 
-test('http mode: list_providers/tools.list/tools.call work with auth', async () => {
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
+test('selectorStrategy=random chooses providers by RNG', async () => {
+  const client = new Client({ name: 'selector-strategy-test-client', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL(router.url), {
     requestInit: { headers: { Authorization: 'Bearer dev-token' } },
   });
-
   await client.connect(transport);
 
-  const providers = await client.callTool({ name: 'list_providers', arguments: {} });
-  const providersJson = providers.structuredContent as any;
-  expect(providersJson.providers.map((p: any) => p.name)).toContain('demo');
-
-  const tools = await client.callTool({ name: 'tools.list', arguments: { provider: 'demo' } });
-  const toolsJson = tools.structuredContent as any;
-  expect(toolsJson.tools.map((t: any) => t.name)).toContain('echo');
-
-  const call = await client.callTool({
+  const r1 = await client.callTool({
     name: 'tools.call',
-    arguments: { provider: 'demo', name: 'echo', arguments: { message: 'hello' } },
+    arguments: { provider: 'tag:demo', name: 'echo', arguments: { message: 'x' } },
   });
-  const callJson = call.structuredContent as any;
-  expect(callJson.structuredContent.message).toBe('hello');
+  expect((r1.structuredContent as any).structuredContent.upstream).toBe('A');
+
+  const r2 = await client.callTool({
+    name: 'tools.call',
+    arguments: { provider: 'tag:demo', name: 'echo', arguments: { message: 'y' } },
+  });
+  expect((r2.structuredContent as any).structuredContent.upstream).toBe('B');
 
   await client.close();
 });

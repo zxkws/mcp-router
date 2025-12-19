@@ -17,7 +17,7 @@ beforeAll(async () => {
     configPath: '<in-memory>',
     listen: { http: { host: '127.0.0.1', port: 0, path: '/mcp' }, stdio: true },
     admin: { enabled: false, path: '/admin', allowUnauthenticated: false },
-    toolExposure: 'hierarchical',
+    toolExposure: 'both',
     routing: {
       selectorStrategy: 'roundRobin',
       healthChecks: { enabled: false, intervalMs: 15_000, timeoutMs: 5_000, includeStdio: false },
@@ -56,28 +56,18 @@ afterAll(async () => {
   await upstream.close();
 });
 
-test('http mode: list_providers/tools.list/tools.call work with auth', async () => {
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
+test('namespaced tools: exposes demo.echo and forwards calls', async () => {
+  const client = new Client({ name: 'namespaced-test-client', version: '1.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL(router.url), {
     requestInit: { headers: { Authorization: 'Bearer dev-token' } },
   });
-
   await client.connect(transport);
 
-  const providers = await client.callTool({ name: 'list_providers', arguments: {} });
-  const providersJson = providers.structuredContent as any;
-  expect(providersJson.providers.map((p: any) => p.name)).toContain('demo');
+  const listed = await client.listTools();
+  expect(listed.tools.some((t: any) => t.name === 'demo.echo')).toBe(true);
 
-  const tools = await client.callTool({ name: 'tools.list', arguments: { provider: 'demo' } });
-  const toolsJson = tools.structuredContent as any;
-  expect(toolsJson.tools.map((t: any) => t.name)).toContain('echo');
-
-  const call = await client.callTool({
-    name: 'tools.call',
-    arguments: { provider: 'demo', name: 'echo', arguments: { message: 'hello' } },
-  });
-  const callJson = call.structuredContent as any;
-  expect(callJson.structuredContent.message).toBe('hello');
+  const res = await client.callTool({ name: 'demo.echo', arguments: { message: 'hi' } });
+  expect((res.structuredContent as any).message).toBe('hi');
 
   await client.close();
 });
