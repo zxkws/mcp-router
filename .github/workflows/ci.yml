@@ -19,10 +19,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: mcp-router/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install
-        working-directory: mcp-router
         run: npm ci
       - name: Test
-        working-directory: mcp-router
         run: npm test
