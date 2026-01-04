@@ -250,8 +250,15 @@ async function main() {
       },
       mcpServers: {
         demo: {
-          transport: 'streamable-http',
-          url: 'http://127.0.0.1:9001/mcp',
+          transport: 'stdio',
+          command: 'npx',
+          args: [
+            '-y',
+            '--package',
+            'git+https://github.com/zxkws/mcp-router.git',
+            'mcpr',
+            'demo',
+          ],
           enabled: true,
           tags: ['demo'],
           version: '1.0.0',
@@ -551,8 +558,15 @@ async function main() {
         },
         mcpServers: {
           demo: {
-            transport: 'streamable-http',
-            url: 'http://127.0.0.1:9001/mcp',
+            transport: 'stdio',
+            command: 'npx',
+            args: [
+              '-y',
+              '--package',
+              'git+https://github.com/zxkws/mcp-router.git',
+              'mcpr',
+              'demo',
+            ],
             enabled: true,
             tags: ['demo'],
             version: '1.0.0',
