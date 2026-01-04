@@ -90,9 +90,9 @@ function usage(exitCode = 0) {
       '  mcpr import --config ./mcp-router.config.json --from <file|-> [--format auto|claude|codex|gemini|1mcp|router|json] [--conflict rename|skip|overwrite] [--prefix name-] [--tag tag] [--dry-run]',
       '  mcpr serve  --config ./mcp-router.config.json [--host 127.0.0.1] [--port 8080] [--path /mcp] [--no-watch]',
       '  mcpr stdio  --config ./mcp-router.config.json --token <TOKEN> [--no-watch]',
-  mcpr run    [--port 8080] [--env KEY=VAL]... [--cwd path] -- <command> [args...]
-  mcpr demo   [--port 8080]           (Run the built-in demo server)
-  mcpr validate --config ./mcp-router.config.json
+      '  mcpr run    [--port 8080] [--env KEY=VAL]... [--cwd path] -- <command> [args...]',
+      '  mcpr demo   [--port 8080]           (Run the built-in demo server)',
+      '  mcpr validate --config ./mcp-router.config.json',
       '  mcpr print-config --config ./mcp-router.config.json',
       '',
       'Notes:',
@@ -535,7 +535,22 @@ async function main() {
   const upstreams = new UpstreamManager({ logger });
 
   const configPath = path.resolve(argValue(args, '--config') ?? defaultConfigPath());
-  const configRef = { current: loadConfigFile(configPath) };
+  let config;
+  try {
+    config = loadConfigFile(configPath);
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      // eslint-disable-next-line no-console
+      console.error(`[mcp-router] Config not found at ${configPath}`);
+      // eslint-disable-next-line no-console
+      console.error(
+        `[mcp-router] Run 'npx mcpr init' to create a default configuration, or 'npx mcpr demo' to try without config.`,
+      );
+      process.exit(1);
+    }
+    throw err;
+  }
+  const configRef = { current: config };
 
   upstreams.setConfigRef(configRef);
 
