@@ -27,6 +27,7 @@
     "dev:serve": "tsx src/cli.ts serve",
     "dev:stdio": "tsx src/cli.ts stdio",
     "build": "tsup",
+    "prepare": "npm run build",
     "prepack": "npm run build",
     "smoke:http": "node examples/smoke-http.mjs",
     "smoke:stdio": "node examples/smoke-stdio.mjs",

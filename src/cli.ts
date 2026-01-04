@@ -90,6 +90,7 @@ function usage(exitCode = 0) {
       '  mcpr import --config ./mcp-router.config.json --from <file|-> [--format auto|claude|codex|gemini|1mcp|router|json] [--conflict rename|skip|overwrite] [--prefix name-] [--tag tag] [--dry-run]',
       '  mcpr serve  --config ./mcp-router.config.json [--host 127.0.0.1] [--port 8080] [--path /mcp] [--no-watch]',
       '  mcpr stdio  --config ./mcp-router.config.json --token <TOKEN> [--no-watch]',
+      '  mcpr run    [--port 8080] [--env KEY=VAL]... [--cwd path] -- <command> [args...]',
       '  mcpr validate --config ./mcp-router.config.json',
       '  mcpr print-config --config ./mcp-router.config.json',
       '',
@@ -105,6 +106,104 @@ async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0];
   if (!cmd || cmd === '-h' || cmd === '--help') usage(0);
+
+  if (cmd === 'run') {
+    // Parse run args: mcpr run [flags] -- cmd args
+    let runArgs = args.slice(1);
+    const commandStartIdx = runArgs.indexOf('--');
+    let commandParts: string[] = [];
+    let flags: string[] = [];
+
+    if (commandStartIdx !== -1) {
+      flags = runArgs.slice(0, commandStartIdx);
+      commandParts = runArgs.slice(commandStartIdx + 1);
+    } else {
+      // Simple heuristic: find first arg that doesn't start with - and isn't a value
+      // This is flaky without strict parsing, so we enforce -- for safety usually,
+      // but let's try to support "mcpr run npx -y foo" if no router flags are present.
+      // Actually, standard practice: strict flags or --.
+      // Let's support: mcpr run npx -y foo (all arguments are command)
+      // IF the first arg doesn't look like a mcpr flag.
+      const knownFlags = ['--port', '--host', '--transport', '--env', '--cwd', '--debug'];
+      const firstArg = runArgs[0];
+      if (firstArg && !knownFlags.includes(firstArg) && !firstArg.startsWith('--port=')) {
+          commandParts = runArgs;
+          flags = [];
+      } else {
+          // If mixed, require --
+           // eslint-disable-next-line no-console
+          console.error('[mcp-router] error: Use "--" to separate router flags from command. Example: mcpr run --port 8080 -- npx server');
+          process.exit(1);
+      }
+    }
+
+    if (commandParts.length === 0) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] run requires a command. Example: mcpr run -- npx -y server');
+      process.exit(1);
+    }
+
+    const portArg = argValue(flags, '--port');
+    const hostArg = argValue(flags, '--host');
+    const transportArg = argValue(flags, '--transport');
+    const cwdArg = argValue(flags, '--cwd');
+    const envPairs = parseKeyValuePairs(collectArgs(flags, '--env'), 'env');
+
+    const port = portArg ? Number(portArg) : 8080;
+    const host = hostArg ?? '127.0.0.1';
+    // If port is specified, default to http. If not, default to stdio (unless transport is explicit)
+    let mode = 'stdio';
+    if (portArg || transportArg === 'http') mode = 'http';
+    if (transportArg === 'stdio') mode = 'stdio';
+
+    const command = commandParts[0];
+    const cmdArgs = commandParts.slice(1);
+
+    const syntheticConfig: any = {
+      configPath: 'synthetic',
+      listen: {
+        http: mode === 'http' ? { host, port, path: '/mcp' } : null,
+        stdio: mode === 'stdio',
+      },
+      admin: { enabled: false, path: '/admin', allowUnauthenticated: false },
+      toolExposure: 'hierarchical',
+      routing: {
+        selectorStrategy: 'roundRobin',
+        healthChecks: { enabled: true, intervalMs: 15000, timeoutMs: 5000, includeStdio: false },
+        circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
+      },
+      audit: { enabled: true, logArguments: false, maxArgumentChars: 2000 },
+      projects: {},
+      sandbox: { stdio: { allowedCommands: null, allowedCwdRoots: null, allowedEnvKeys: null, inheritEnvKeys: null } },
+      auth: { tokens: [] },
+      mcpServers: {
+        default: {
+          transport: 'stdio',
+          command,
+          args: cmdArgs,
+          cwd: cwdArg,
+          env: envPairs,
+          enabled: true,
+        }
+      }
+    };
+
+    const logger = createLogger();
+    const upstreams = new UpstreamManager({ logger });
+    // @ts-ignore - simplified config ref
+    upstreams.setConfigRef({ current: syntheticConfig });
+
+    if (mode === 'http') {
+       // eslint-disable-next-line no-console
+       console.error(`[mcp-router] Running in HTTP mode on ${host}:${port}, proxying to: ${command} ${cmdArgs.join(' ')}`);
+       await startHttpServer({ configRef: { current: syntheticConfig }, upstreams, logger, host, port, path: '/mcp' });
+    } else {
+       // eslint-disable-next-line no-console
+       console.error(`[mcp-router] Running in stdio mode, proxying to: ${command} ${cmdArgs.join(' ')}`);
+       await startStdioServer({ configRef: { current: syntheticConfig }, upstreams, logger, token: null });
+    }
+    return;
+  }
 
   if (cmd === 'init') {
     const cfgPath = path.resolve(argValue(args, '--config') ?? defaultConfigPath());
@@ -417,7 +516,10 @@ async function main() {
   if (cmd === 'serve') {
     const host = argValue(args, '--host') ?? configRef.current.listen.http?.host ?? '127.0.0.1';
     const portArg = argValue(args, '--port');
-    const port = portArg ? Number(portArg) : configRef.current.listen.http?.port ?? 8080;
+    const envPort = process.env.PORT ? Number(process.env.PORT) : null;
+    const port = portArg
+      ? Number(portArg)
+      : configRef.current.listen.http?.port ?? envPort ?? 8080;
     const mcpPath = argValue(args, '--path') ?? configRef.current.listen.http?.path ?? '/mcp';
     await startHttpServer({ configRef, upstreams, logger, host, port, path: mcpPath });
     return;
