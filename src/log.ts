@@ -13,7 +13,7 @@ export function createLogger(): Logger {
       ...fields,
     };
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify(line));
+    console.error(JSON.stringify(line));
   };
   return {
     info: (msg, fields) => base('info', msg, fields),
