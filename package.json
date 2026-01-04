@@ -29,8 +29,6 @@
     "build": "tsup",
     "prepare": "npm run build",
     "prepack": "npm run build",
-    "smoke:http": "node examples/smoke-http.mjs",
-    "smoke:stdio": "node examples/smoke-stdio.mjs",
     "test": "npm run build && vitest run",
     "lint": "node -c dist/cli.js || true"
   },

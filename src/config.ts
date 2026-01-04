@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { z } from 'zod';
 import type { McpServerConfig, RouterConfig } from './types.js';
 
@@ -201,7 +202,9 @@ export type NormalizedRouterConfig = {
 };
 
 export function defaultConfigPath(cwd = process.cwd()) {
-  return path.join(cwd, 'mcp-router.config.json');
+  const local = path.join(cwd, 'mcp-router.config.json');
+  if (fs.existsSync(local)) return local;
+  return path.join(os.homedir(), '.mcpr', 'mcp-router.config.json');
 }
 
 export function parseRouterConfig(input: unknown): RouterConfig {

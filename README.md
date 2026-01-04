@@ -1,130 +1,121 @@
 # mcp-router
 
-An open-source MCP router that proxies multiple MCP servers behind a single MCP endpoint (HTTP or Stdio).
+**The Central Hub for your MCP Servers.**
 
-## Features
+Solve the problem of configuring the same MCP servers (Filesystem, Git, Memory, etc.) repeatedly in every IDE (Claude, Codex, Cursor, etc.). Configure them once in `mcp-router`, and point all your IDEs to this single router.
 
-- **Multi-Transport**: Supports `stdio` and Streamable HTTP (`/mcp`) transports.
-- **Hierarchical Discovery**: Aggregates tools from multiple upstreams (`list_providers`, `tools.list`, `tools.call`).
-- **Flexible Routing**: Route by provider name, tags (`tag:demo`), or versions (`version:^1.0`).
-- **Zero Config Mode**: Run and expose any MCP server command instantly (`mcpr run ...`).
-- **Security**: Token-based authentication (Bearer/X-API-Key) and basic stdio guardrails.
-- **Observability**: Health checks, circuit breakers, and metrics (`/metrics`).
-- **Config Import**: Import existing configs from Claude Desktop, Codex, or generic JSON/TOML.
+## How it works
 
-## Quick Start
-
-### 1. Zero Config (Instant Run)
-
-Run any MCP server command (like `npx`) and expose it via the router without creating a config file.
-
-**Stdio Mode (for Claude Desktop):**
-```bash
-npx -y --package git+https://github.com/zxkws/mcp-router.git mcpr run -- npx -y @modelcontextprotocol/server-memory
+```mermaid
+graph LR
+    IDE1[Claude Desktop] --> Router[mcp-router]
+    IDE2[Codex] --> Router
+    IDE3[Cursor] --> Router
+    
+    Router --> S1[Filesystem Server]
+    Router --> S2[Memory Server]
+    Router --> S3[Postgres Server]
 ```
 
-**HTTP Mode (Bridge to HTTP):**
+## Setup Guide
+
+### 1. Initialize Configuration
+
+Run this command to create the central config file at `~/.mcpr/mcp-router.config.json`:
+
 ```bash
-# Exposes the server at http://localhost:8080/mcp
-npx -y --package git+https://github.com/zxkws/mcp-router.git mcpr run --port 8080 -- npx -y @modelcontextprotocol/server-memory
+npx --yes --package git+https://github.com/zxkws/mcp-router.git mcpr init
 ```
 
-### 2. Configured Mode (Recommended for Production)
+### 2. Add Servers
 
-1. **Create Configuration:**
-   ```bash
-   npx --yes --package git+https://github.com/zxkws/mcp-router.git mcpr init
-   ```
+Edit `~/.mcpr/mcp-router.config.json` to include your tools.
 
-2. **Run:**
-   ```bash
-   # HTTP Server
-   npx --yes --package git+https://github.com/zxkws/mcp-router.git mcpr serve
-   ```
-
-### 3. Claude Desktop Setup
-
-To use `mcp-router` as your primary entry point in Claude Desktop:
+**Example Configuration:**
 
 ```json
 {
   "mcpServers": {
-    "router": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/yourname/workspace"],
+      "enabled": true
+    },
+    "memory": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### 3. Connect your IDEs
+
+Now point your IDEs to the router. No need to specify config paths anymore—it automatically loads from `~/.mcpr/mcp-router.config.json`.
+
+#### For Codex (`codex.toml`)
+
+```toml
+[mcp_servers.hub]
+command = "npx"
+args = [
+    "-y",
+    "--package", "git+https://github.com/zxkws/mcp-router.git",
+    "mcpr",
+    "stdio"
+]
+```
+
+#### For Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "hub": {
       "command": "npx",
       "args": [
         "-y",
         "--package", "git+https://github.com/zxkws/mcp-router.git",
         "mcpr",
-        "run",
-        "--",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-memory"
+        "stdio"
       ]
     }
   }
 }
 ```
-*(Note: The above example runs a single server. To run multiple, create a `mcp-router.config.json` and use `mcpr stdio --config ...` instead.)*
 
-## Configuration
+---
 
-The router is driven by `mcp-router.config.json` (created via `mcpr init`).
+## Why use this?
 
-### Basic Example
+1.  **Write Once, Run Everywhere**: Add a new tool to your config, and it instantly appears in Claude, Codex, and any other client.
+2.  **No Port Conflicts**: The router manages the connections via `stdio` or a single HTTP port.
+3.  **Unified Logs**: Centralized logging for all tool usage.
 
-```json
-{
-  "listen": { 
-    "http": { "port": 8080, "path": "/mcp" }, 
-    "stdio": true 
-  },
-  "mcpServers": {
-    "local-server": {
-      "transport": "stdio",
-      "command": "node",
-      "args": ["./path/to/server.js"],
-      "enabled": true
-    },
-    "remote-server": {
-      "transport": "streamable-http",
-      "url": "http://localhost:9001/mcp",
-      "enabled": true
-    }
-  }
-}
-```
+## Advanced Usage
 
-### Importing Existing Configs
+### Importing existing configs
 
-Merge existing server definitions from other tools:
+Import your existing Claude config into your new central hub:
 
 ```bash
-# Import from Claude Desktop
 npx mcpr import --from ~/Library/Application\ Support/Claude/claude_desktop_config.json --format claude
 ```
 
-## Advanced Features
+### Local Project Config
 
-### Routing & Discovery
-- **Hierarchical**: Only router tools are exposed initially.
-- **Namespaced**: Upstream tools exposed as `serverName.toolName`.
-- **Tag/Version**: Use `tag:tagname` or `version:^1.0` in tool selectors to dynamically route to available upstreams.
+If you want a project-specific config, just place a `mcp-router.config.json` in your project root. `mcp-router` will prioritize it over the global one in `~/.mcpr/`.
 
-### Reliability
-The router includes a **Circuit Breaker** and **Health Checks** to manage upstream failures automatically.
-```json
-{
-  "routing": {
-    "circuitBreaker": { "enabled": true, "failureThreshold": 3 },
-    "healthChecks": { "enabled": true, "intervalMs": 15000 }
-  }
-}
+### Built-in Demo
+
+Quickly test if everything is working:
+
+```bash
+npx mcpr demo
 ```
-
-## Environment Variables
-
-- `PORT`: Overrides `listen.http.port` (e.g. `PORT=3000 mcpr serve`).
 
 ## License
 

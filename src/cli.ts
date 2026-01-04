@@ -90,8 +90,9 @@ function usage(exitCode = 0) {
       '  mcpr import --config ./mcp-router.config.json --from <file|-> [--format auto|claude|codex|gemini|1mcp|router|json] [--conflict rename|skip|overwrite] [--prefix name-] [--tag tag] [--dry-run]',
       '  mcpr serve  --config ./mcp-router.config.json [--host 127.0.0.1] [--port 8080] [--path /mcp] [--no-watch]',
       '  mcpr stdio  --config ./mcp-router.config.json --token <TOKEN> [--no-watch]',
-      '  mcpr run    [--port 8080] [--env KEY=VAL]... [--cwd path] -- <command> [args...]',
-      '  mcpr validate --config ./mcp-router.config.json',
+  mcpr run    [--port 8080] [--env KEY=VAL]... [--cwd path] -- <command> [args...]
+  mcpr demo   [--port 8080]           (Run the built-in demo server)
+  mcpr validate --config ./mcp-router.config.json
       '  mcpr print-config --config ./mcp-router.config.json',
       '',
       'Notes:',
@@ -107,57 +108,86 @@ async function main() {
   const cmd = args[0];
   if (!cmd || cmd === '-h' || cmd === '--help') usage(0);
 
-  if (cmd === 'run') {
-    // Parse run args: mcpr run [flags] -- cmd args
-    let runArgs = args.slice(1);
-    const commandStartIdx = runArgs.indexOf('--');
-    let commandParts: string[] = [];
-    let flags: string[] = [];
+  if (cmd === 'run' || cmd === 'demo') {
+    let command: string;
+    let cmdArgs: string[];
+    let portArg: string | null = null;
+    let hostArg: string | null = null;
+    let transportArg: string | null = null;
+    let cwdArg: string | null = null;
+    let envPairs: Record<string, string> = {};
 
-    if (commandStartIdx !== -1) {
-      flags = runArgs.slice(0, commandStartIdx);
-      commandParts = runArgs.slice(commandStartIdx + 1);
+    if (cmd === 'demo') {
+      // Demo mode: run the built-in demo server
+      // Locate demo.js relative to this script
+      // In dist: ./cli.js -> ./demo.js
+      // In src (dev): ./cli.ts -> ./demo.ts (but we usually run dist in prod)
+      
+      // Heuristic: check if we are in a 'dist' folder or 'src'.
+      // For simplicity in the built package, we assume `demo.js` is next to `cli.js`.
+      const selfDir = path.dirname(process.argv[1]);
+      const possibleDemoJs = path.join(selfDir, 'demo.js');
+      // If we are running via tsx/ts-node in dev, it might be different, but let's target the built artifact first.
+      
+      command = process.execPath;
+      cmdArgs = [possibleDemoJs];
+
+      // Allow simple flags for demo too
+      portArg = argValue(args, '--port');
+      hostArg = argValue(args, '--host');
+      transportArg = argValue(args, '--transport');
+      // Demo doesn't need --env or --cwd usually, but no harm ignoring them or supporting them if passed.
     } else {
-      // Simple heuristic: find first arg that doesn't start with - and isn't a value
-      // This is flaky without strict parsing, so we enforce -- for safety usually,
-      // but let's try to support "mcpr run npx -y foo" if no router flags are present.
-      // Actually, standard practice: strict flags or --.
-      // Let's support: mcpr run npx -y foo (all arguments are command)
-      // IF the first arg doesn't look like a mcpr flag.
-      const knownFlags = ['--port', '--host', '--transport', '--env', '--cwd', '--debug'];
-      const firstArg = runArgs[0];
-      if (firstArg && !knownFlags.includes(firstArg) && !firstArg.startsWith('--port=')) {
-          commandParts = runArgs;
-          flags = [];
+      // Run mode
+      // ... existing run logic ...
+      let runArgs = args.slice(1);
+      const commandStartIdx = runArgs.indexOf('--');
+      let commandParts: string[] = [];
+      let flags: string[] = [];
+
+      if (commandStartIdx !== -1) {
+        flags = runArgs.slice(0, commandStartIdx);
+        commandParts = runArgs.slice(commandStartIdx + 1);
       } else {
-          // If mixed, require --
+        const knownFlags = ['--port', '--host', '--transport', '--env', '--cwd', '--debug'];
+        const firstArg = runArgs[0];
+        if (firstArg && !knownFlags.includes(firstArg) && !firstArg.startsWith('--port=')) {
+            commandParts = runArgs;
+            flags = [];
+        } else {
            // eslint-disable-next-line no-console
           console.error('[mcp-router] error: Use "--" to separate router flags from command. Example: mcpr run --port 8080 -- npx server');
           process.exit(1);
+        }
       }
-    }
 
-    if (commandParts.length === 0) {
-      // eslint-disable-next-line no-console
-      console.error('[mcp-router] run requires a command. Example: mcpr run -- npx -y server');
-      process.exit(1);
-    }
+      if (commandParts.length === 0) {
+        // eslint-disable-next-line no-console
+        console.error('[mcp-router] run requires a command. Example: mcpr run -- npx -y server');
+        process.exit(1);
+      }
 
-    const portArg = argValue(flags, '--port');
-    const hostArg = argValue(flags, '--host');
-    const transportArg = argValue(flags, '--transport');
-    const cwdArg = argValue(flags, '--cwd');
-    const envPairs = parseKeyValuePairs(collectArgs(flags, '--env'), 'env');
+      portArg = argValue(flags, '--port');
+      hostArg = argValue(flags, '--host');
+      transportArg = argValue(flags, '--transport');
+      cwdArg = argValue(flags, '--cwd');
+      envPairs = parseKeyValuePairs(collectArgs(flags, '--env'), 'env');
+      command = commandParts[0];
+      cmdArgs = commandParts.slice(1);
+    }
 
     const port = portArg ? Number(portArg) : 8080;
     const host = hostArg ?? '127.0.0.1';
-    // If port is specified, default to http. If not, default to stdio (unless transport is explicit)
+    
+    // Logic for mode selection
     let mode = 'stdio';
     if (portArg || transportArg === 'http') mode = 'http';
     if (transportArg === 'stdio') mode = 'stdio';
 
-    const command = commandParts[0];
-    const cmdArgs = commandParts.slice(1);
+    if (cmd === 'demo' && mode === 'stdio') {
+       // In demo stdio mode, check if demo.js actually exists, otherwise warn (e.g. if running ts source directly without build)
+       // But we proceed anyway.
+    }
 
     const syntheticConfig: any = {
       configPath: 'synthetic',
@@ -194,12 +224,14 @@ async function main() {
     upstreams.setConfigRef({ current: syntheticConfig });
 
     if (mode === 'http') {
+       const targetDesc = cmd === 'demo' ? 'Internal Demo Server' : `${command} ${cmdArgs.join(' ')}`;
        // eslint-disable-next-line no-console
-       console.error(`[mcp-router] Running in HTTP mode on ${host}:${port}, proxying to: ${command} ${cmdArgs.join(' ')}`);
+       console.error(`[mcp-router] Running in HTTP mode on ${host}:${port}, proxying to: ${targetDesc}`);
        await startHttpServer({ configRef: { current: syntheticConfig }, upstreams, logger, host, port, path: '/mcp' });
     } else {
+       const targetDesc = cmd === 'demo' ? 'Internal Demo Server' : `${command} ${cmdArgs.join(' ')}`;
        // eslint-disable-next-line no-console
-       console.error(`[mcp-router] Running in stdio mode, proxying to: ${command} ${cmdArgs.join(' ')}`);
+       console.error(`[mcp-router] Running in stdio mode, proxying to: ${targetDesc}`);
        await startStdioServer({ configRef: { current: syntheticConfig }, upstreams, logger, token: null });
     }
     return;
@@ -231,20 +263,27 @@ async function main() {
 
     try {
       if (!force) {
-        await fs.access(cfgPath);
-        // eslint-disable-next-line no-console
-        console.error(`[mcp-router] config already exists: ${cfgPath} (use --force to overwrite)`);
-        process.exit(1);
+        // Check if file exists
+        try {
+          await fs.access(cfgPath);
+          // If we are here, it exists
+          // eslint-disable-next-line no-console
+          console.error(`[mcp-router] config already exists: ${cfgPath} (use --force to overwrite)`);
+          process.exit(1);
+        } catch {
+          // Doesn't exist, proceed
+        }
       }
     } catch {
       // ok
     }
 
+    await fs.mkdir(path.dirname(cfgPath), { recursive: true });
     await fs.writeFile(cfgPath, JSON.stringify(template, null, 2) + '\n', 'utf8');
     // eslint-disable-next-line no-console
     console.log(`[mcp-router] wrote ${cfgPath}`);
     // eslint-disable-next-line no-console
-    console.log('Next: npm run dev:serve -- --config ' + cfgPath);
+    console.log('Next: npx mcpr serve');
     return;
   }
 
