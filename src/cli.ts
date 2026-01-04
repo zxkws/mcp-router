@@ -91,7 +91,6 @@ function usage(exitCode = 0) {
       '  mcpr serve  --config ./mcp-router.config.json [--host 127.0.0.1] [--port 8080] [--path /mcp] [--no-watch]',
       '  mcpr stdio  --config ./mcp-router.config.json --token <TOKEN> [--no-watch]',
       '  mcpr run    [--port 8080] [--env KEY=VAL]... [--cwd path] -- <command> [args...]',
-      '  mcpr demo   [--port 8080]           (Run the built-in demo server)',
       '  mcpr validate --config ./mcp-router.config.json',
       '  mcpr print-config --config ./mcp-router.config.json',
       '',
@@ -108,7 +107,7 @@ async function main() {
   const cmd = args[0];
   if (!cmd || cmd === '-h' || cmd === '--help') usage(0);
 
-  if (cmd === 'run' || cmd === 'demo') {
+  if (cmd === 'run') {
     let command: string;
     let cmdArgs: string[];
     let portArg: string | null = null;
@@ -117,64 +116,41 @@ async function main() {
     let cwdArg: string | null = null;
     let envPairs: Record<string, string> = {};
 
-    if (cmd === 'demo') {
-      // Demo mode: run the built-in demo server
-      // Locate demo.js relative to this script
-      // In dist: ./cli.js -> ./demo.js
-      // In src (dev): ./cli.ts -> ./demo.ts (but we usually run dist in prod)
-      
-      // Heuristic: check if we are in a 'dist' folder or 'src'.
-      // For simplicity in the built package, we assume `demo.js` is next to `cli.js`.
-      const selfDir = path.dirname(process.argv[1]);
-      const possibleDemoJs = path.join(selfDir, 'demo.js');
-      // If we are running via tsx/ts-node in dev, it might be different, but let's target the built artifact first.
-      
-      command = process.execPath;
-      cmdArgs = [possibleDemoJs];
+    // Run mode
+    let runArgs = args.slice(1);
+    const commandStartIdx = runArgs.indexOf('--');
+    let commandParts: string[] = [];
+    let flags: string[] = [];
 
-      // Allow simple flags for demo too
-      portArg = argValue(args, '--port');
-      hostArg = argValue(args, '--host');
-      transportArg = argValue(args, '--transport');
-      // Demo doesn't need --env or --cwd usually, but no harm ignoring them or supporting them if passed.
+    if (commandStartIdx !== -1) {
+      flags = runArgs.slice(0, commandStartIdx);
+      commandParts = runArgs.slice(commandStartIdx + 1);
     } else {
-      // Run mode
-      // ... existing run logic ...
-      let runArgs = args.slice(1);
-      const commandStartIdx = runArgs.indexOf('--');
-      let commandParts: string[] = [];
-      let flags: string[] = [];
-
-      if (commandStartIdx !== -1) {
-        flags = runArgs.slice(0, commandStartIdx);
-        commandParts = runArgs.slice(commandStartIdx + 1);
+      const knownFlags = ['--port', '--host', '--transport', '--env', '--cwd', '--debug'];
+      const firstArg = runArgs[0];
+      if (firstArg && !knownFlags.includes(firstArg) && !firstArg.startsWith('--port=')) {
+          commandParts = runArgs;
+          flags = [];
       } else {
-        const knownFlags = ['--port', '--host', '--transport', '--env', '--cwd', '--debug'];
-        const firstArg = runArgs[0];
-        if (firstArg && !knownFlags.includes(firstArg) && !firstArg.startsWith('--port=')) {
-            commandParts = runArgs;
-            flags = [];
-        } else {
            // eslint-disable-next-line no-console
           console.error('[mcp-router] error: Use "--" to separate router flags from command. Example: mcpr run --port 8080 -- npx server');
           process.exit(1);
-        }
       }
-
-      if (commandParts.length === 0) {
-        // eslint-disable-next-line no-console
-        console.error('[mcp-router] run requires a command. Example: mcpr run -- npx -y server');
-        process.exit(1);
-      }
-
-      portArg = argValue(flags, '--port');
-      hostArg = argValue(flags, '--host');
-      transportArg = argValue(flags, '--transport');
-      cwdArg = argValue(flags, '--cwd');
-      envPairs = parseKeyValuePairs(collectArgs(flags, '--env'), 'env');
-      command = commandParts[0];
-      cmdArgs = commandParts.slice(1);
     }
+
+    if (commandParts.length === 0) {
+      // eslint-disable-next-line no-console
+      console.error('[mcp-router] run requires a command. Example: mcpr run -- npx -y server');
+      process.exit(1);
+    }
+
+    portArg = argValue(flags, '--port');
+    hostArg = argValue(flags, '--host');
+    transportArg = argValue(flags, '--transport');
+    cwdArg = argValue(flags, '--cwd');
+    envPairs = parseKeyValuePairs(collectArgs(flags, '--env'), 'env');
+    command = commandParts[0];
+    cmdArgs = commandParts.slice(1);
 
     const port = portArg ? Number(portArg) : 8080;
     const host = hostArg ?? '127.0.0.1';
@@ -183,11 +159,6 @@ async function main() {
     let mode = 'stdio';
     if (portArg || transportArg === 'http') mode = 'http';
     if (transportArg === 'stdio') mode = 'stdio';
-
-    if (cmd === 'demo' && mode === 'stdio') {
-       // In demo stdio mode, check if demo.js actually exists, otherwise warn (e.g. if running ts source directly without build)
-       // But we proceed anyway.
-    }
 
     const syntheticConfig: any = {
       configPath: 'synthetic',
@@ -224,12 +195,12 @@ async function main() {
     upstreams.setConfigRef({ current: syntheticConfig });
 
     if (mode === 'http') {
-       const targetDesc = cmd === 'demo' ? 'Internal Demo Server' : `${command} ${cmdArgs.join(' ')}`;
+       const targetDesc = `${command} ${cmdArgs.join(' ')}`;
        // eslint-disable-next-line no-console
        console.error(`[mcp-router] Running in HTTP mode on ${host}:${port}, proxying to: ${targetDesc}`);
        await startHttpServer({ configRef: { current: syntheticConfig }, upstreams, logger, host, port, path: '/mcp' });
     } else {
-       const targetDesc = cmd === 'demo' ? 'Internal Demo Server' : `${command} ${cmdArgs.join(' ')}`;
+       const targetDesc = `${command} ${cmdArgs.join(' ')}`;
        // eslint-disable-next-line no-console
        console.error(`[mcp-router] Running in stdio mode, proxying to: ${targetDesc}`);
        await startStdioServer({ configRef: { current: syntheticConfig }, upstreams, logger, token: null });
@@ -249,19 +220,15 @@ async function main() {
         circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
       },
       mcpServers: {
-        demo: {
+        filesystem: {
           transport: 'stdio',
           command: 'npx',
           args: [
             '-y',
-            '--package',
-            'git+https://github.com/zxkws/mcp-router.git',
-            'mcpr',
-            'demo',
+            '@modelcontextprotocol/server-filesystem',
+            '/Users/username/Desktop',
           ],
-          enabled: true,
-          tags: ['demo'],
-          version: '1.0.0',
+          enabled: false,
         },
       },
     };
@@ -557,19 +524,15 @@ async function main() {
           circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
         },
         mcpServers: {
-          demo: {
+          filesystem: {
             transport: 'stdio',
             command: 'npx',
             args: [
               '-y',
-              '--package',
-              'git+https://github.com/zxkws/mcp-router.git',
-              'mcpr',
-              'demo',
+              '@modelcontextprotocol/server-filesystem',
+              '/Users/username/Desktop',
             ],
-            enabled: true,
-            tags: ['demo'],
-            version: '1.0.0',
+            enabled: false,
           },
         },
       };

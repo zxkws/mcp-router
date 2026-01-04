@@ -4,6 +4,8 @@
 
 Solve the problem of configuring the same MCP servers (Filesystem, Git, Memory, etc.) repeatedly in every IDE (Claude, Codex, Cursor, etc.). Configure them once in `mcp-router`, and point all your IDEs to this single router.
 
+[中文文档](./README_CN.md)
+
 ## How it works
 
 ```mermaid
@@ -54,7 +56,7 @@ Edit `~/.mcpr/mcp-router.config.json` to include your tools.
 
 ### 3. Connect your IDEs
 
-Now point your IDEs to the router. No need to specify config paths anymore—it automatically loads from `~/.mcpr/mcp-router.config.json`.
+Now point your IDEs to the router. No need to specify config paths—it automatically loads from `~/.mcpr/mcp-router.config.json`.
 
 #### For Codex (`codex.toml`)
 
@@ -105,17 +107,23 @@ Import your existing Claude config into your new central hub:
 npx mcpr import --from ~/Library/Application\ Support/Claude/claude_desktop_config.json --format claude
 ```
 
-### Local Project Config
+### Quick Run (Zero Config)
 
-If you want a project-specific config, just place a `mcp-router.config.json` in your project root. `mcp-router` will prioritize it over the global one in `~/.mcpr/`.
-
-### Built-in Demo
-
-Quickly test if everything is working:
+Run *any* MCP server command (like `npx` or `python`) and expose it via the router without creating a config file.
 
 ```bash
-npx mcpr demo
+# Exposes the @modelcontextprotocol/server-memory
+npx --yes --package git+https://github.com/zxkws/mcp-router.git mcpr run -- npx -y @modelcontextprotocol/server-memory
 ```
+
+## FAQ
+
+### I configured `listen.http` but don't see a server at localhost:8080?
+The `mcpr stdio` command (used by IDEs) **does not** start the HTTP server to avoid port conflicts when multiple IDE instances run.
+To use the HTTP server, run `npx mcpr serve` in a separate terminal. Both will share the same config.
+
+### Where is my config file?
+By default, it is at `~/.mcpr/mcp-router.config.json`. You can edit this file to add more servers.
 
 ## License
 
