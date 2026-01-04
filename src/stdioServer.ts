@@ -30,7 +30,17 @@ export async function startStdioServer(input: {
     breaker,
     logger: input.logger,
   });
-  const principal = authFromToken(input.configRef.current, input.token);
+  let principal;
+  try {
+    principal = authFromToken(input.configRef.current, input.token);
+  } catch (err: any) {
+    if ((err.message === 'Missing token' || err.message === 'Invalid token') && !input.token) {
+      input.logger.warn('No token provided in stdio mode; bypassing auth checks (running as trusted local user).');
+      principal = { enabled: false, token: null, allowedMcpServers: null, allowedTags: null, rateLimitRpm: null, projectId: null };
+    } else {
+      throw err;
+    }
+  }
   const server = createRouterServer({
     configRef: input.configRef,
     principal,

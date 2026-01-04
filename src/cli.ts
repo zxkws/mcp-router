@@ -248,7 +248,6 @@ async function main() {
         healthChecks: { enabled: true, intervalMs: 15000, timeoutMs: 5000, includeStdio: false },
         circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
       },
-      auth: { tokens: [{ value: 'dev-token' }] },
       mcpServers: {
         demo: {
           transport: 'streamable-http',
@@ -256,7 +255,6 @@ async function main() {
           enabled: true,
           tags: ['demo'],
           version: '1.0.0',
-          headers: { Authorization: 'Bearer upstream-token-if-needed' },
         },
       },
     };
@@ -551,7 +549,6 @@ async function main() {
           healthChecks: { enabled: true, intervalMs: 15000, timeoutMs: 5000, includeStdio: false },
           circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
         },
-        auth: { tokens: [{ value: 'dev-token' }] },
         mcpServers: {
           demo: {
             transport: 'streamable-http',
@@ -559,7 +556,6 @@ async function main() {
             enabled: true,
             tags: ['demo'],
             version: '1.0.0',
-            headers: { Authorization: 'Bearer upstream-token-if-needed' },
           },
         },
       };
