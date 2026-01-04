@@ -541,14 +541,36 @@ async function main() {
   } catch (err: any) {
     if (err.code === 'ENOENT') {
       // eslint-disable-next-line no-console
-      console.error(`[mcp-router] Config not found at ${configPath}`);
-      // eslint-disable-next-line no-console
-      console.error(
-        `[mcp-router] Run 'npx mcpr init' to create a default configuration, or 'npx mcpr demo' to try without config.`,
-      );
-      process.exit(1);
+      console.warn(`[mcp-router] Config not found at ${configPath}. Initializing default config...`);
+
+      const template = {
+        listen: { http: { port: 8080, path: '/mcp' }, stdio: true },
+        toolExposure: 'hierarchical',
+        routing: {
+          selectorStrategy: 'roundRobin',
+          healthChecks: { enabled: true, intervalMs: 15000, timeoutMs: 5000, includeStdio: false },
+          circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
+        },
+        auth: { tokens: [{ value: 'dev-token' }] },
+        mcpServers: {
+          demo: {
+            transport: 'streamable-http',
+            url: 'http://127.0.0.1:9001/mcp',
+            enabled: true,
+            tags: ['demo'],
+            version: '1.0.0',
+            headers: { Authorization: 'Bearer upstream-token-if-needed' },
+          },
+        },
+      };
+
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.writeFile(configPath, JSON.stringify(template, null, 2) + '\n', 'utf8');
+
+      config = loadConfigFile(configPath);
+    } else {
+      throw err;
     }
-    throw err;
   }
   const configRef = { current: config };
 
