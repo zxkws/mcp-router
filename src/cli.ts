@@ -551,7 +551,12 @@ async function main() {
 
   const isLongRunning = cmd === 'serve' || cmd === 'stdio';
   const watch = isLongRunning && !hasFlag(args, '--no-watch');
-  const stopWatch = watch ? watchConfigFile(configPath, (c) => (configRef.current = c)) : null;
+  const stopWatch = watch
+    ? watchConfigFile(configPath, (c) => {
+        configRef.current = c;
+        upstreams.onConfigUpdate(c);
+      })
+    : null;
 
   if (isLongRunning) {
     const shutdown = async () => {
