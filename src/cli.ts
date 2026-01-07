@@ -220,15 +220,11 @@ async function main() {
         circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
       },
       mcpServers: {
-        filesystem: {
+        playwright: {
           transport: 'stdio',
           command: 'npx',
-          args: [
-            '-y',
-            '@modelcontextprotocol/server-filesystem',
-            '/Users/username/Desktop',
-          ],
-          enabled: false,
+          args: ['-y', '@playwright/mcp@latest'],
+          enabled: true,
         },
       },
     };
@@ -524,15 +520,11 @@ async function main() {
           circuitBreaker: { enabled: true, failureThreshold: 3, openMs: 30000 },
         },
         mcpServers: {
-          filesystem: {
+          playwright: {
             transport: 'stdio',
             command: 'npx',
-            args: [
-              '-y',
-              '@modelcontextprotocol/server-filesystem',
-              '/Users/username/Desktop',
-            ],
-            enabled: false,
+            args: ['-y', '@playwright/mcp@latest'],
+            enabled: true,
           },
         },
       };

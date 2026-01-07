@@ -35,19 +35,27 @@ Edit `~/.mcpr/mcp-router.config.json` to include your tools.
 
 **Example Configuration:**
 
+Tip: for the filesystem server, point to a specific workspace directory (avoid overly broad roots like your home folder).
+
 ```json
 {
   "mcpServers": {
     "filesystem": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/yourname/workspace"],
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"],
       "enabled": true
     },
     "memory": {
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    "playwright": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
       "enabled": true
     }
   }

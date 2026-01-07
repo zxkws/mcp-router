@@ -33,19 +33,27 @@ npx --yes --package git+https://github.com/zxkws/mcp-router.git mcpr init
 
 **配置示例：**
 
+提示：filesystem server 建议只指向你需要暴露的工作目录（避免把整个用户目录当作根目录）。
+
 ```json
 {
   "mcpServers": {
     "filesystem": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/yourname/workspace"],
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"],
       "enabled": true
     },
     "memory": {
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    "playwright": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
       "enabled": true
     }
   }
